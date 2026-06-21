@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -75,6 +76,7 @@ func (s *VideoServer) CreateVideo(ctx echo.Context) error {
 		"autor":      &dynamodbtypes.AttributeValueMemberS{Value: req.Autor},
 		"createdAt":  &dynamodbtypes.AttributeValueMemberS{Value: now.Format(time.RFC3339)},
 		"updatedAt":  &dynamodbtypes.AttributeValueMemberS{Value: now.Format(time.RFC3339)},
+		"likeCount":  &dynamodbtypes.AttributeValueMemberN{Value: "0"},
 	}
 
 	if req.Descricao != nil {
@@ -104,6 +106,7 @@ func (s *VideoServer) CreateVideo(ctx echo.Context) error {
 		ThumbnailUrl: req.ThumbnailUrl,
 		CreatedAt:    now,
 		UpdatedAt:    now,
+		LikeCount:    0,
 	}
 
 	return ctx.JSON(http.StatusCreated, api.VideoResponse{Video: video})
@@ -161,6 +164,16 @@ func (s *VideoServer) ListVideos(ctx echo.Context, params api.ListVideosParams) 
 			if t, err := time.Parse(time.RFC3339, v.Value); err == nil {
 				video.UpdatedAt = t
 			}
+		}
+		if v, ok := item["likeCount"].(*dynamodbtypes.AttributeValueMemberN); ok {
+			var likeCount int
+			fmt.Sscanf(v.Value, "%d", &likeCount)
+			video.LikeCount = likeCount
+		}
+		if v, ok := item["viewCount"].(*dynamodbtypes.AttributeValueMemberN); ok {
+			var viewCount int
+			fmt.Sscanf(v.Value, "%d", &viewCount)
+			video.ViewCount = &viewCount
 		}
 		videos = append(videos, video)
 	}
@@ -221,6 +234,93 @@ func (s *VideoServer) GetVideoById(ctx echo.Context, id openapi_types.UUID) erro
 		if t, err := time.Parse(time.RFC3339, v.Value); err == nil {
 			video.UpdatedAt = t
 		}
+	}
+	if v, ok := result.Item["likeCount"].(*dynamodbtypes.AttributeValueMemberN); ok {
+		var likeCount int
+		fmt.Sscanf(v.Value, "%d", &likeCount)
+		video.LikeCount = likeCount
+	}
+	if v, ok := result.Item["viewCount"].(*dynamodbtypes.AttributeValueMemberN); ok {
+		var viewCount int
+		fmt.Sscanf(v.Value, "%d", &viewCount)
+		video.ViewCount = &viewCount
+	}
+
+	return ctx.JSON(http.StatusOK, api.VideoResponse{Video: video})
+}
+
+func (s *VideoServer) LikeVideo(ctx echo.Context, id openapi_types.UUID) error {
+	result, err := s.dynamoClient.GetItem(context.TODO(), &dynamodb.GetItemInput{
+		TableName: aws.String(tableName),
+		Key: map[string]dynamodbtypes.AttributeValue{
+			"id": &dynamodbtypes.AttributeValueMemberS{Value: id.String()},
+		},
+	})
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, api.ErrorResponse{
+			Code:    "DYNAMO_ERROR",
+			Message: "Erro interno ao buscar o vídeo",
+		})
+	}
+
+	if result.Item == nil {
+		return ctx.JSON(http.StatusNotFound, api.ErrorResponse{
+			Code:    "NOT_FOUND",
+			Message: "Vídeo não encontrado",
+		})
+	}
+
+	currentLikeCount := 0
+	if v, ok := result.Item["likeCount"].(*dynamodbtypes.AttributeValueMemberN); ok {
+		fmt.Sscanf(v.Value, "%d", &currentLikeCount)
+	}
+	newLikeCount := currentLikeCount + 1
+
+	_, err = s.dynamoClient.UpdateItem(context.TODO(), &dynamodb.UpdateItemInput{
+		TableName: aws.String(tableName),
+		Key: map[string]dynamodbtypes.AttributeValue{
+			"id": &dynamodbtypes.AttributeValueMemberS{Value: id.String()},
+		},
+		UpdateExpression: aws.String("SET likeCount = :val"),
+		ExpressionAttributeValues: map[string]dynamodbtypes.AttributeValue{
+			":val": &dynamodbtypes.AttributeValueMemberN{Value: fmt.Sprintf("%d", newLikeCount)},
+		},
+	})
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, api.ErrorResponse{
+			Code:    "DYNAMO_ERROR",
+			Message: "Erro interno ao atualizar curtidas",
+		})
+	}
+
+	video := api.Video{
+		Id:        id,
+		Titulo:    result.Item["titulo"].(*dynamodbtypes.AttributeValueMemberS).Value,
+		UrlS3:     result.Item["url_s3"].(*dynamodbtypes.AttributeValueMemberS).Value,
+		Autor:     result.Item["autor"].(*dynamodbtypes.AttributeValueMemberS).Value,
+		LikeCount: newLikeCount,
+	}
+
+	if v, ok := result.Item["descricao"].(*dynamodbtypes.AttributeValueMemberS); ok {
+		video.Descricao = &v.Value
+	}
+	if v, ok := result.Item["thumbnailUrl"].(*dynamodbtypes.AttributeValueMemberS); ok {
+		video.ThumbnailUrl = &v.Value
+	}
+	if v, ok := result.Item["createdAt"].(*dynamodbtypes.AttributeValueMemberS); ok {
+		if t, err := time.Parse(time.RFC3339, v.Value); err == nil {
+			video.CreatedAt = t
+		}
+	}
+	if v, ok := result.Item["updatedAt"].(*dynamodbtypes.AttributeValueMemberS); ok {
+		if t, err := time.Parse(time.RFC3339, v.Value); err == nil {
+			video.UpdatedAt = t
+		}
+	}
+	if v, ok := result.Item["viewCount"].(*dynamodbtypes.AttributeValueMemberN); ok {
+		var viewCount int
+		fmt.Sscanf(v.Value, "%d", &viewCount)
+		video.ViewCount = &viewCount
 	}
 
 	return ctx.JSON(http.StatusOK, api.VideoResponse{Video: video})

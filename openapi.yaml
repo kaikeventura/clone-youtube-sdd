@@ -159,6 +159,33 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /videos/{id}/like:
+    post:
+      tags: ["Videos"]
+      summary: "Dar like no vídeo"
+      operationId: "likeVideo"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+          description: "Identificador único do vídeo (UUID v4)."
+      responses:
+        "200":
+          description: "Like registrado com sucesso"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoResponse"
+        "404":
+          description: "Vídeo não encontrado"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     # ── Upload ──────────────────────────────────────────────────────
@@ -254,7 +281,7 @@ components:
 
     Video:
       type: "object"
-      required: ["id", "titulo", "url_s3", "autor", "createdAt", "updatedAt"]
+      required: ["id", "titulo", "url_s3", "autor", "createdAt", "updatedAt", "likeCount"]
       properties:
         id:
           type: "string"
@@ -288,6 +315,10 @@ components:
         viewCount:
           type: "integer"
           description: "Número de visualizações."
+          example: 0
+        likeCount:
+          type: "integer"
+          description: "Número de curtidas."
           example: 0
         createdAt:
           type: "string"

@@ -39,6 +39,10 @@ export interface Video {
      */
     viewCount?: number;
     /**
+     * Número de curtidas.
+     */
+    likeCount: number;
+    /**
      * Data/hora de criação do registro.
      */
     createdAt: string;

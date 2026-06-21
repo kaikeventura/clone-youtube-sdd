@@ -13,6 +13,9 @@ import { VideosService, Video } from '../../core/api';
       <div *ngFor="let video of videos" style="border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
         <h3>{{ video.titulo }}</h3>
         <p><strong>Autor:</strong> {{ video.autor }}</p>
+        <button (click)="likeVideo(video)" style="margin-bottom: 12px; padding: 8px 16px; cursor: pointer;">
+          👍 Gostei ({{ video.likeCount || 0 }})
+        </button>
         <video controls width="100%" [src]="video.url_s3"></video>
       </div>
     </div>
@@ -27,6 +30,15 @@ export class VideoListComponent implements OnInit {
     this.videosService.listVideos().subscribe({
       next: (res) => this.videos = res.videos,
       error: (err) => console.error('Erro ao listar vídeos:', err)
+    });
+  }
+
+  likeVideo(video: Video) {
+    this.videosService.likeVideo(video.id).subscribe({
+      next: () => {
+        video.likeCount = (video.likeCount || 0) + 1;
+      },
+      error: (err) => console.error('Erro ao curtir vídeo:', err)
     });
   }
 }
