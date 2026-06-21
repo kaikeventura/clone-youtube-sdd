@@ -1,0 +1,10 @@
+{
+  "/s3": {
+    "target": "http://localhost:4566",
+    "secure": false,
+    "pathRewrite": {
+      "^/s3": ""
+    },
+    "changeOrigin": true
+  }
+}

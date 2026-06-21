@@ -1,0 +1,348 @@
+openapi: "3.0.3"
+
+info:
+  title: "YouTube Clone API"
+  description: "API para clone do YouTube — upload, cadastro e consulta de vídeos."
+  version: "1.0.0"
+
+servers:
+  - url: "https://api.clone-youtube.example.com/v1"
+    description: "Produção"
+  - url: "http://localhost:3000/v1"
+    description: "Desenvolvimento local"
+
+tags:
+  - name: "Videos"
+    description: "Operações relacionadas a vídeos"
+
+paths:
+  /videos/upload:
+    post:
+      tags: ["Videos"]
+      summary: "Iniciar upload de vídeo"
+      description: |
+        Gera uma URL assinada do S3 (presigned URL) para que o cliente
+        possa fazer o upload direto do arquivo de vídeo.
+      operationId: "createUploadUrl"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadRequest"
+      responses:
+        "200":
+          description: "URL assinada gerada com sucesso"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponse"
+        "400":
+          description: "Dados de entrada inválidos"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Erro interno ao gerar a URL"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /videos:
+    post:
+      tags: ["Videos"]
+      summary: "Registrar metadados do vídeo"
+      description: |
+        Salva os metadados de um vídeo já carregado no S3
+        (id, título, descrição, url_s3, autor) no DynamoDB.
+      operationId: "createVideo"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVideoRequest"
+      responses:
+        "201":
+          description: "Vídeo registrado com sucesso"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoResponse"
+        "400":
+          description: "Dados de entrada inválidos"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "Já existe um vídeo com o mesmo id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Erro interno ao registrar o vídeo"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    get:
+      tags: ["Videos"]
+      summary: "Listar todos os vídeos"
+      description: "Retorna a lista de todos os vídeos cadastrados no DynamoDB."
+      operationId: "listVideos"
+      parameters:
+        - name: "limit"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: "Quantidade máxima de vídeos a retornar."
+        - name: "nextToken"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+          description: "Token de paginação para a próxima página."
+      responses:
+        "200":
+          description: "Lista de vídeos retornada com sucesso"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoListResponse"
+        "500":
+          description: "Erro interno ao listar vídeos"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /videos/{id}:
+    get:
+      tags: ["Videos"]
+      summary: "Obter detalhes de um vídeo"
+      description: "Retorna os metadados completos de um vídeo específico pelo seu id."
+      operationId: "getVideoById"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+          description: "Identificador único do vídeo (UUID v4)."
+      responses:
+        "200":
+          description: "Detalhes do vídeo retornados com sucesso"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoResponse"
+        "404":
+          description: "Vídeo não encontrado"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Erro interno ao buscar o vídeo"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    # ── Upload ──────────────────────────────────────────────────────
+    UploadRequest:
+      type: "object"
+      required: ["fileName", "fileType"]
+      properties:
+        fileName:
+          type: "string"
+          minLength: 1
+          maxLength: 255
+          description: "Nome original do arquivo (ex: video.mp4)."
+          example: "meu-video.mp4"
+        fileType:
+          type: "string"
+          enum:
+            - "video/mp4"
+            - "video/webm"
+            - "video/quicktime"
+            - "video/x-msvideo"
+          description: "MIME type do arquivo de vídeo."
+          example: "video/mp4"
+        fileSize:
+          type: "integer"
+          format: "int64"
+          minimum: 1
+          maximum: 10737418240
+          description: "Tamanho do arquivo em bytes (máx. 10 GB)."
+          example: 524288000
+
+    UploadResponse:
+      type: "object"
+      required: ["uploadUrl", "expiresIn", "videoId"]
+      properties:
+        uploadUrl:
+          type: "string"
+          format: "uri"
+          description: "URL assinada do S3 para upload direto."
+          example: "https://my-bucket.s3.amazonaws.com/uploads/abc-123.mp4?X-Amz-Signature=..."
+        videoId:
+          type: "string"
+          format: "uuid"
+          description: "Identificador único do vídeo que será criado."
+          example: "d290f1ee-6c54-4b01-90e6-d701748f0851"
+        expiresIn:
+          type: "integer"
+          description: "Tempo de validade da URL em segundos."
+          example: 3600
+        expiresAt:
+          type: "string"
+          format: "date-time"
+          description: "Data/hora de expiração da URL."
+          example: "2026-06-21T16:00:00Z"
+
+    # ── Vídeo ───────────────────────────────────────────────────────
+    CreateVideoRequest:
+      type: "object"
+      required: ["id", "titulo", "url_s3", "autor"]
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+          description: "Identificador único do vídeo (deve coincidir com o id gerado no upload)."
+          example: "d290f1ee-6c54-4b01-90e6-d701748f0851"
+        titulo:
+          type: "string"
+          minLength: 1
+          maxLength: 128
+          description: "Título do vídeo."
+          example: "Meu primeiro vídeo"
+        descricao:
+          type: "string"
+          maxLength: 5000
+          description: "Descrição detalhada do vídeo."
+          example: "Vídeo demonstrativo do clone do YouTube."
+        url_s3:
+          type: "string"
+          format: "uri"
+          description: "URL final do objeto no S3 após o upload."
+          example: "https://my-bucket.s3.amazonaws.com/uploads/d290f1ee-6c54-4b01-90e6-d701748f0851.mp4"
+        autor:
+          type: "string"
+          minLength: 1
+          maxLength: 128
+          description: "Nome do autor/criador do vídeo."
+          example: "kaike"
+        thumbnailUrl:
+          type: "string"
+          format: "uri"
+          nullable: true
+          description: "URL da miniatura do vídeo."
+          example: "https://my-bucket.s3.amazonaws.com/thumbnails/d290f1ee.jpg"
+
+    Video:
+      type: "object"
+      required: ["id", "titulo", "url_s3", "autor", "createdAt", "updatedAt"]
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+          description: "Identificador único do vídeo."
+          example: "d290f1ee-6c54-4b01-90e6-d701748f0851"
+        titulo:
+          type: "string"
+          description: "Título do vídeo."
+          example: "Meu primeiro vídeo"
+        descricao:
+          type: "string"
+          nullable: true
+          description: "Descrição do vídeo."
+          example: "Vídeo demonstrativo do clone do YouTube."
+        url_s3:
+          type: "string"
+          format: "uri"
+          description: "URL do objeto no S3."
+          example: "https://my-bucket.s3.amazonaws.com/uploads/d290f1ee.mp4"
+        autor:
+          type: "string"
+          description: "Nome do autor."
+          example: "kaike"
+        thumbnailUrl:
+          type: "string"
+          format: "uri"
+          nullable: true
+          description: "URL da miniatura."
+          example: "https://my-bucket.s3.amazonaws.com/thumbnails/d290f1ee.jpg"
+        viewCount:
+          type: "integer"
+          description: "Número de visualizações."
+          example: 0
+        createdAt:
+          type: "string"
+          format: "date-time"
+          description: "Data/hora de criação do registro."
+          example: "2026-06-21T12:00:00Z"
+        updatedAt:
+          type: "string"
+          format: "date-time"
+          description: "Data/hora da última atualização."
+          example: "2026-06-21T12:00:00Z"
+
+    VideoResponse:
+      type: "object"
+      required: ["video"]
+      properties:
+        video:
+          $ref: "#/components/schemas/Video"
+
+    VideoListResponse:
+      type: "object"
+      required: ["videos"]
+      properties:
+        videos:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/Video"
+        nextToken:
+          type: "string"
+          nullable: true
+          description: "Token para buscar a próxima página (null quando não houver mais)."
+          example: "eyJ0b3RhbCI6MjB9"
+
+    # ── Erro ────────────────────────────────────────────────────────
+    ErrorResponse:
+      type: "object"
+      required: ["code", "message"]
+      properties:
+        code:
+          type: "string"
+          description: "Código legível do erro."
+          example: "VALIDATION_ERROR"
+        message:
+          type: "string"
+          description: "Mensagem descritiva do erro."
+          example: "O campo 'titulo' é obrigatório."
+        details:
+          type: "array"
+          nullable: true
+          items:
+            type: "object"
+            properties:
+              field:
+                type: "string"
+                example: "titulo"
+              reason:
+                type: "string"
+                example: "não deve estar vazio"
